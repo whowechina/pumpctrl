@@ -1,0 +1,20 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 11.00
+# Atmel Studio Solution File, Format Version 11.00
+Project("{54F91283-7BC4-4236-8FF9-10F437C3AD48}") = "pumpctrl", "pumpctrl.cproj", "{BCA33942-E993-4EF0-87D5-08D3BB7A87DA}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		diagnose|AVR = diagnose|AVR
+		release|AVR = release|AVR
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{BCA33942-E993-4EF0-87D5-08D3BB7A87DA}.diagnose|AVR.ActiveCfg = diagnose|AVR
+		{BCA33942-E993-4EF0-87D5-08D3BB7A87DA}.diagnose|AVR.Build.0 = diagnose|AVR
+		{BCA33942-E993-4EF0-87D5-08D3BB7A87DA}.release|AVR.ActiveCfg = release|AVR
+		{BCA33942-E993-4EF0-87D5-08D3BB7A87DA}.release|AVR.Build.0 = release|AVR
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal
