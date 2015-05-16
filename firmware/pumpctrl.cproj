@@ -89,10 +89,10 @@
   <avrgcc.compiler.warnings.AllWarnings>True</avrgcc.compiler.warnings.AllWarnings>
 </AvrGcc>
     </ToolchainSettings>
-    <OutputPath>bin\diagnose\</OutputPath>
+    <OutputPath>diagnose\</OutputPath>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)' == 'release' ">
-    <OutputPath>bin\release\</OutputPath>
+    <OutputPath>release\</OutputPath>
     <ToolchainSettings>
       <AvrGcc xmlns="">
   <avrgcc.common.outputfiles.hex>True</avrgcc.common.outputfiles.hex>
