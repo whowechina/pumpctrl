@@ -29,13 +29,13 @@ typedef struct tagLED
     byte bit;
 } LED;
 
-const LED L1 = { LED_OUT_PB, PORTB0};
-const LED L2 = { LED_OUT_PB, PORTB1};
-const LED L3 = { LED_OUT_PA, PORTA1};
-const LED L4 = { LED_OUT_PA, PORTA2};
+const LED L1 = { LED_OUT_PA, PORTA4};
+const LED L2 = { LED_OUT_PA, PORTA5};
+const LED L3 = { LED_OUT_PA, PORTA6};
+const LED L4 = { LED_OUT_PA, PORTA7};
 
-#define THROTTLE  (0 << REFS0) | (7 << MUX0)    /* Vcc as Reference, Single-end PA7 */
-#define VBAT  (0 << REFS0) | (6 << MUX0)    /* Vcc as Reference, Single-end PA7 */
+#define THROTTLE  (0 << REFS0) | (1 << MUX0)    /* Vcc as Reference, Single-end ADC1 */
+#define VBAT  (0 << REFS0) | (0 << MUX0)    /* Vcc as Reference, Single-end ADC0 */
 
 void init();
 void init_port();
