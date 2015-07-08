@@ -37,6 +37,13 @@ const LED L4 = { LED_OUT_PA, PORTA7};
 #define THROTTLE  (0 << REFS0) | (1 << MUX0)    /* Vcc as Reference, Single-end ADC1 */
 #define VBAT  (0 << REFS0) | (0 << MUX0)    /* Vcc as Reference, Single-end ADC0 */
 
+#define BATT_LEVEL_BOOT 630
+#define BATT_LEVEL_1 600
+#define BATT_LEVEL_2 700
+#define BATT_LEVEL_3 790
+#define BATT_LEVEL_4 870
+
+
 void init();
 void init_port();
 void init_adc();
@@ -47,6 +54,7 @@ void output_pwm(unsigned short pow);
 unsigned short read_adc(byte source);
 
 void diagnose();
+void low_batt();
 
     
 void led_init(LED led);
@@ -96,6 +104,8 @@ void init_adc()
     DIDR0 = 0xff;
     /* Initial Input THROTTLE*/
     ADMUX = THROTTLE;
+    
+    read_adc(VBAT);
 }
 
 unsigned short read_adc(byte source)
@@ -154,15 +164,85 @@ void led_off(LED led)
 
 int main(void)
 {
+    unsigned short vbat;
+    unsigned short thr;
+    
     init();
 
+    _delay_ms(50);
+    
     #ifdef DIAGNOSE
     diagnose();
     #endif
 
     while (1)
     {
+        thr = read_adc(THROTTLE);
+        vbat = read_adc(VBAT) >> 6;
+        vbat += read_adc(VBAT) >> 6;
+        vbat += read_adc(VBAT) >> 6;
+        vbat += read_adc(VBAT) >> 6;
+        vbat >>= 2;
+        
+        if (vbat >= BATT_LEVEL_BOOT)
+        {
+            output_pwm(thr >> 8);
+            _delay_ms(100);
+        }
+        else
+        {
+            low_batt();
+        }
+        
+        if (vbat >= BATT_LEVEL_4)
+            led_on(L4);
+        else
+            led_off(L4);
+        
+        if (vbat >= BATT_LEVEL_3)
+            led_on(L3);
+        else
+            led_off(L3);
+
+        if (vbat >= BATT_LEVEL_2)
+            led_on(L2);
+        else
+            led_off(L2);
+
+        if (vbat >= BATT_LEVEL_1)
+        {
+            led_on(L1);
+            output_pwm(thr >> 8);
+            _delay_ms(50);
+        }            
+        else
+        {
+            led_off(L1);
+            low_batt();
+        }            
+
+        wdt_reset();
     }
+}
+
+void low_batt()
+{
+    led_off(L1);
+    led_off(L2);
+    led_off(L3);
+    led_off(L4);
+    while (1)
+    {
+        output_pwm(0);
+        
+        led_on(L1);
+        _delay_ms(300);
+        
+        led_off(L1);
+        _delay_ms(300);
+        
+        wdt_reset();
+    }        
 }
 
 #ifdef DIAGNOSE
