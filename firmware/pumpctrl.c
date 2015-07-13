@@ -7,11 +7,19 @@
 
 #define F_CPU 8000000
 
+#include <avr/io.h>
 #include <avr/signature.h>
+#include <avr/eeprom.h>
+
 const char fusedata[] __attribute__ ((section (".fuse"))) =
 {0xE2, 0xDF, 0xFF};
+
 const char lockbits[] __attribute__ ((section (".lockbits"))) =
 {0xFC};
+
+unsigned char eeprom[] __attribute__ ((section (".eeprom"))) =
+{0x00, 0x00, 0x00};
+
 
 #include <avr/io.h>
 #include <avr/pgmspace.h>
@@ -36,6 +44,11 @@ const LED L4 = { LED_OUT_PA, PORTA7};
 
 #define THROTTLE  (0 << REFS0) | (1 << MUX0)    /* Vcc as Reference, Single-end ADC1 */
 #define VBAT  (0 << REFS0) | (0 << MUX0)    /* Vcc as Reference, Single-end ADC0 */
+#define HVOUT  (PORTB1)
+#define SW_HV  (PINA3) /* Switch for HV */
+#define SW_CAL (PINA2) /* Switch for CAL */
+
+unsigned char hvout;
 
 #define BATT_LEVEL_BOOT 630
 #define BATT_LEVEL_1 600
@@ -48,6 +61,10 @@ void init();
 void init_port();
 void init_adc();
 void init_pwm();
+
+void restore_hv();
+void backup_hv();
+void output_hv();
 
 void output_pwm(unsigned short pow);
 
@@ -62,11 +79,13 @@ void led_on(LED led);
 void led_off(LED led);
 
 
+
 void init()
 {
     init_port();
     init_pwm();
     init_adc();
+    restore_hv();
     wdt_enable(WDTO_2S);
 }
 
@@ -76,14 +95,16 @@ void init_port()
     PORTA = 0x00;
     PORTB = 0x00;
     
-    /* PA[7..0] Input, PB2 as PWM Out, LEDs out */
+    /* PA[7..0] Input, PB2 as PWM Out, PB1 as HV Out, LEDs all out */
     DDRA = 0;
-    DDRB = 1 << DDB2;
+    DDRB = (1 << DDB1) | (1 << DDB2);
     
     led_init(L1);
     led_init(L2);
     led_init(L3);
     led_init(L4);
+    
+    PORTA = (1 << SW_HV) | (1 << SW_CAL); /* Pull-up HV Switch and CAL Switch Pin */
 }
 
 void init_pwm()
@@ -101,11 +122,37 @@ void init_adc()
     /* Left Adjusted */
     ADCSRB = (1 << ADLAR);
     /* Digital Buffer All Cleared */
-    DIDR0 = 0xff;
+    DIDR0 = 1 << ADC0D;
     /* Initial Input THROTTLE*/
     ADMUX = THROTTLE;
     
     read_adc(VBAT);
+}
+
+void restore_hv()
+{
+    hvout = eeprom_read_byte(& eeprom[2]);
+    output_hv();
+}
+
+void toggle_hv()
+{
+    if (hvout)
+        hvout = 0;
+    else
+        hvout = 0xff;
+
+    output_hv();
+    
+    eeprom_write_byte(& eeprom[2], hvout);
+}
+
+void output_hv()
+{
+    if (hvout)
+        PORTB |= (1 << HVOUT);
+    else
+        PORTB &= ~(1 << HVOUT);
 }
 
 unsigned short read_adc(byte source)
@@ -123,6 +170,7 @@ unsigned short read_adc(byte source)
     return ADCL | (ADCH << 8);
 }
 
+/* 0: min (off), 255: max */
 void output_pwm(unsigned short pow)
 {
     if (pow == 0)
@@ -162,6 +210,26 @@ void led_off(LED led)
 }
 
 
+void check_hv()
+{
+    static unsigned char old = 0;
+    unsigned char i, hv;
+
+    for (i = 0; i < 10; i ++)
+    {
+        hv = bit_is_clear(PINA, SW_HV);
+        if (hv == old)
+            return;
+        _delay_ms(1);
+    }
+    
+    old = hv;
+    if (old)
+    {
+        toggle_hv();
+    }
+}
+
 int main(void)
 {
     unsigned short vbat;
@@ -177,6 +245,7 @@ int main(void)
 
     while (1)
     {
+        check_hv();
         thr = read_adc(THROTTLE);
         vbat = read_adc(VBAT) >> 6;
         vbat += read_adc(VBAT) >> 6;
@@ -186,7 +255,7 @@ int main(void)
         
         if (vbat >= BATT_LEVEL_BOOT)
         {
-            output_pwm(thr >> 8);
+            output_pwm(255 - (thr >> 9));
             _delay_ms(100);
         }
         else
@@ -212,7 +281,7 @@ int main(void)
         if (vbat >= BATT_LEVEL_1)
         {
             led_on(L1);
-            output_pwm(thr >> 8);
+            output_pwm(255 - (thr >> 9));
             _delay_ms(50);
         }            
         else
@@ -220,7 +289,6 @@ int main(void)
             led_off(L1);
             low_batt();
         }            
-
         wdt_reset();
     }
 }
