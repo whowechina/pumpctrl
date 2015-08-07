@@ -65,6 +65,7 @@ void init_pwm();
 void restore_hv();
 void backup_hv();
 void output_hv();
+void disable_hv();
 void check_hv();
 
 void output_pwm(unsigned short pow);
@@ -138,7 +139,6 @@ void init_adc()
 void restore_hv()
 {
     hvout = eeprom_read_byte(& eeprom[2]);
-    output_hv();
 }
 
 void toggle_hv()
@@ -161,9 +161,14 @@ void output_hv()
         PORTB &= ~(1 << HVOUT);
 }
 
-void all_off()
+void disable_hv()
 {
 	PORTB &= ~(1 << HVOUT);
+}
+
+void all_off()
+{
+	disable_hv();
 	led_off(L1);
 	led_off(L2);
 	led_off(L3);
@@ -189,16 +194,16 @@ unsigned short read_adc(byte source)
 /* 0: min (off), 255: max */
 void output_pwm(unsigned short pow)
 {
-    if (pow == 0)
-    {
-        TCCR0A &= ~(3 << COM0A0); /* Turn off pwm */
-        OCR0A = 0;
-    }
-    else
-    {
-        TCCR0A |= 2 << COM0A0; /* Turn on pwm */
-        OCR0A = pow - 1;
-    }
+	if (pow == 0)
+	{
+		TCCR0A &= ~(3 << COM0A0); /* Turn off pwm */
+		OCR0A = 0;
+	}
+	else
+	{
+		TCCR0A |= 2 << COM0A0; /* Turn on pwm */
+		OCR0A = pow - 1;
+	}
 }
 
 void led_init(LED led)
@@ -265,8 +270,8 @@ byte triggered()
 
 void idle()
 {
+    init();
 	all_off();
-	output_pwm(0);
 	
 	while (1)
 	{
@@ -281,8 +286,12 @@ void run()
 {
     unsigned short vbat;
     unsigned short thr;
+	byte bootcount = 0;
 
-	output_hv();
+	init();
+
+	read_adc(THROTTLE); /* dummy read */
+	read_adc(VBAT); /* dummy read */
 	
     while (1)
     {
@@ -294,16 +303,40 @@ void run()
 	    vbat += read_adc(VBAT) >> 6;
 	    vbat >>= 2;
 	    
-	    if (vbat >= BATT_LEVEL_BOOT)
-	    {
-		    output_pwm(255 - (thr >> 9));
-		    _delay_ms(100);
-	    }
-	    else
-	    {
-		    low_batt();
-			return;
-	    }
+		if (bootcount == 0)
+		{
+			/* ready to start ? */
+			if (vbat >= BATT_LEVEL_BOOT)
+			{
+				output_pwm(255 - (thr >> 9));
+				bootcount ++;
+				_delay_ms(50);
+			}
+			else
+			{
+				low_batt();
+				return;
+			}
+		}
+		else if (bootcount < 10)
+		{
+			/* starting */
+			bootcount ++;
+			_delay_ms(50);
+		}
+		else
+		{
+			/* started */
+			if (vbat >= BATT_LEVEL_BOOT)
+			{
+				output_hv();
+			}
+			else
+			{
+				low_batt();
+				return;
+			}
+		}
 	    
 	    if (vbat >= BATT_LEVEL_4)
 	    led_on(L4);
@@ -342,8 +375,6 @@ int main(void)
 {
     init();
 
-    _delay_ms(50);
-    
     #ifdef DIAGNOSE
     diagnose();
     #endif
@@ -364,6 +395,7 @@ void low_batt()
     led_off(L3);
     led_off(L4);
 	output_pwm(0);
+	disable_hv();
     
 	for (i = 0; i < 10; i ++)
     {
