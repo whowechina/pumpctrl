@@ -46,7 +46,7 @@ const LED L4 = { LED_OUT_PA, PORTA7};
 #define VBAT  (0 << REFS0) | (0 << MUX0)    /* Vcc as Reference, Single-end ADC0 */
 #define HVOUT  (PORTB1)
 #define SW_HV  (PINA3) /* Switch for HV */
-#define SW_CAL (PINA2) /* Switch for CAL */
+#define SW_TRIGGER (PINA2) /* Switch for CAL */
 
 unsigned char hvout;
 
@@ -65,6 +65,7 @@ void init_pwm();
 void restore_hv();
 void backup_hv();
 void output_hv();
+void check_hv();
 
 void output_pwm(unsigned short pow);
 
@@ -78,7 +79,12 @@ void led_init(LED led);
 void led_on(LED led);
 void led_off(LED led);
 
+byte triggered();
 
+void all_off();
+
+void run();
+void idle();
 
 void init()
 {
@@ -104,7 +110,7 @@ void init_port()
     led_init(L3);
     led_init(L4);
     
-    PORTA = (1 << SW_HV) | (1 << SW_CAL); /* Pull-up HV Switch and CAL Switch Pin */
+    PORTA = (1 << SW_HV) | (1 << SW_TRIGGER); /* Pull-up HV Switch and CAL Switch Pin */
 }
 
 void init_pwm()
@@ -153,6 +159,16 @@ void output_hv()
         PORTB |= (1 << HVOUT);
     else
         PORTB &= ~(1 << HVOUT);
+}
+
+void all_off()
+{
+	PORTB &= ~(1 << HVOUT);
+	led_off(L1);
+	led_off(L2);
+	led_off(L3);
+	led_off(L4);
+	output_pwm(0);
 }
 
 unsigned short read_adc(byte source)
@@ -212,8 +228,8 @@ void led_off(LED led)
 
 void check_hv()
 {
-    static unsigned char old = 0;
-    unsigned char i, hv;
+    static byte old = 0;
+    byte i, hv;
 
     for (i = 0; i < 10; i ++)
     {
@@ -230,11 +246,100 @@ void check_hv()
     }
 }
 
-int main(void)
+byte triggered()
+{
+    static byte old = 0;
+    byte i, trg;
+
+    for (i = 0; i < 10; i ++)
+    {
+	    trg = bit_is_clear(PINA, SW_TRIGGER);
+	    if (trg == old)
+			return 0;
+	    _delay_ms(1);
+    }
+    old = trg;
+
+	return old;
+}
+
+void idle()
+{
+	all_off();
+	output_pwm(0);
+	
+	while (1)
+	{
+		if (triggered())
+			break;
+		_delay_ms(10);
+	    wdt_reset();
+	}
+}
+
+void run()
 {
     unsigned short vbat;
     unsigned short thr;
-    
+
+	output_hv();
+	
+    while (1)
+    {
+	    check_hv();
+	    thr = read_adc(THROTTLE);
+	    vbat = read_adc(VBAT) >> 6;
+	    vbat += read_adc(VBAT) >> 6;
+	    vbat += read_adc(VBAT) >> 6;
+	    vbat += read_adc(VBAT) >> 6;
+	    vbat >>= 2;
+	    
+	    if (vbat >= BATT_LEVEL_BOOT)
+	    {
+		    output_pwm(255 - (thr >> 9));
+		    _delay_ms(100);
+	    }
+	    else
+	    {
+		    low_batt();
+			return;
+	    }
+	    
+	    if (vbat >= BATT_LEVEL_4)
+	    led_on(L4);
+	    else
+	    led_off(L4);
+	    
+	    if (vbat >= BATT_LEVEL_3)
+	    led_on(L3);
+	    else
+	    led_off(L3);
+
+	    if (vbat >= BATT_LEVEL_2)
+	    led_on(L2);
+	    else
+	    led_off(L2);
+
+	    if (vbat >= BATT_LEVEL_1)
+	    {
+		    led_on(L1);
+		    output_pwm(255 - (thr >> 9));
+		    _delay_ms(50);
+	    }
+	    else
+	    {
+		    led_off(L1);
+		    low_batt();
+	    }
+		
+		if (triggered())
+			break;
+	    wdt_reset();
+    }
+}
+
+int main(void)
+{
     init();
 
     _delay_ms(50);
@@ -243,71 +348,40 @@ int main(void)
     diagnose();
     #endif
 
-    while (1)
-    {
-        check_hv();
-        thr = read_adc(THROTTLE);
-        vbat = read_adc(VBAT) >> 6;
-        vbat += read_adc(VBAT) >> 6;
-        vbat += read_adc(VBAT) >> 6;
-        vbat += read_adc(VBAT) >> 6;
-        vbat >>= 2;
-        
-        if (vbat >= BATT_LEVEL_BOOT)
-        {
-            output_pwm(255 - (thr >> 9));
-            _delay_ms(100);
-        }
-        else
-        {
-            low_batt();
-        }
-        
-        if (vbat >= BATT_LEVEL_4)
-            led_on(L4);
-        else
-            led_off(L4);
-        
-        if (vbat >= BATT_LEVEL_3)
-            led_on(L3);
-        else
-            led_off(L3);
-
-        if (vbat >= BATT_LEVEL_2)
-            led_on(L2);
-        else
-            led_off(L2);
-
-        if (vbat >= BATT_LEVEL_1)
-        {
-            led_on(L1);
-            output_pwm(255 - (thr >> 9));
-            _delay_ms(50);
-        }            
-        else
-        {
-            led_off(L1);
-            low_batt();
-        }            
-        wdt_reset();
-    }
+	while (1)
+	{
+		idle();
+		run();
+	}
 }
 
 void low_batt()
 {
+	int i, j;
+	
     led_off(L1);
     led_off(L2);
     led_off(L3);
     led_off(L4);
-    while (1)
+	output_pwm(0);
+    
+	for (i = 0; i < 10; i ++)
     {
-        output_pwm(0);
-        
         led_on(L1);
-        _delay_ms(300);
+		for (j = 0; j < 30; j ++)
+		{
+			_delay_ms(10);
+			if (triggered())
+				return;
+		}
         
         led_off(L1);
-        _delay_ms(300);
+		for (j = 0; j < 30; j ++)
+		{
+			_delay_ms(10);
+			if (triggered())
+				return;
+		}
         
         wdt_reset();
     }        
