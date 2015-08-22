@@ -13,13 +13,10 @@
 
 const char fusedata[] __attribute__ ((section (".fuse"))) =
 {0xE2, 0xDF, 0xFF};
-
 const char lockbits[] __attribute__ ((section (".lockbits"))) =
 {0xFC};
-
 unsigned char eeprom[] __attribute__ ((section (".eeprom"))) =
-{0x00, 0x00, 0x00};
-
+{0x00, 0x00, 0x00, 0x00};
 
 #include <avr/io.h>
 #include <avr/pgmspace.h>
@@ -48,7 +45,11 @@ const LED L4 = { LED_OUT_PA, PORTA7};
 #define SW_HV  (PINA3) /* Switch for HV */
 #define SW_TRIGGER (PINA2) /* Switch for CAL */
 
+#define EEPROM_ADDR_HV 2
+#define EEPROM_ADDR_MODE 3
+
 unsigned char hvout;
+unsigned char mode;
 
 #define BATT_LEVEL_BOOT 630
 #define BATT_LEVEL_1 600
@@ -72,17 +73,24 @@ void output_pwm(unsigned short pow);
 
 unsigned short read_adc(byte source);
 
-void diagnose();
 void low_batt();
-
     
 void led_init(LED led);
 void led_on(LED led);
 void led_off(LED led);
 
-byte triggered();
+#define TRIGGER_ON 0
+#define TRIGGER_OFF 1
+#define TRIGGER_FIRE 2
+#define TRIGGER_RELEASE 3
+
+byte trigger();
 
 void all_off();
+
+void restore_mode();
+void backup_mode();
+void display_mode();
 
 void run();
 void idle();
@@ -93,6 +101,7 @@ void init()
     init_pwm();
     init_adc();
     restore_hv();
+    restore_mode();
     wdt_enable(WDTO_2S);
 }
 
@@ -138,7 +147,7 @@ void init_adc()
 
 void restore_hv()
 {
-    hvout = eeprom_read_byte(& eeprom[2]);
+    hvout = eeprom_read_byte(& eeprom[EEPROM_ADDR_HV]);
 }
 
 void toggle_hv()
@@ -150,7 +159,7 @@ void toggle_hv()
 
     output_hv();
     
-    eeprom_write_byte(& eeprom[2], hvout);
+    eeprom_write_byte(& eeprom[EEPROM_ADDR_HV], hvout);
 }
 
 void output_hv()
@@ -251,7 +260,7 @@ void check_hv()
     }
 }
 
-byte triggered()
+byte trigger()
 {
     static byte old = 0;
     byte i, trg;
@@ -260,24 +269,92 @@ byte triggered()
     {
 	    trg = bit_is_clear(PINA, SW_TRIGGER);
 	    if (trg == old)
-			return 0;
+            return (trg) ? TRIGGER_ON : TRIGGER_OFF;
+
 	    _delay_ms(1);
     }
     old = trg;
+    
+    return (trg) ? TRIGGER_FIRE : TRIGGER_RELEASE;
+}
 
-	return old;
+void restore_mode()
+{
+    mode = eeprom_read_byte(& eeprom[EEPROM_ADDR_MODE]);
+}
+
+void backup_mode()
+{
+    eeprom_write_byte(& eeprom[EEPROM_ADDR_MODE], mode);
+}
+
+void display_mode()
+{
+    if (mode)
+    {
+        led_on(L1);
+        _delay_ms(100);
+
+        led_off(L1);
+        led_on(L2);
+        _delay_ms(100);
+
+        led_off(L2);        
+        led_on(L3);
+        _delay_ms(100);
+
+        led_off(L3);
+        led_on(L4);
+        _delay_ms(100);
+
+        led_off(L4);
+    }
+    else
+    {
+        led_on(L4);
+        _delay_ms(100);
+
+        led_off(L4);
+        led_on(L3);
+        _delay_ms(100);
+
+        led_off(L3);
+        led_on(L2);
+        _delay_ms(100);
+
+        led_off(L2);
+        led_on(L1);
+        _delay_ms(100);
+
+        led_off(L1);
+    }
 }
 
 void idle()
 {
-    init();
+    unsigned short toggle_count = 0;
+
 	all_off();
-	
+    
 	while (1)
 	{
-		if (triggered())
+		if (trigger() == TRIGGER_FIRE)
 			break;
-		_delay_ms(10);
+
+        if (bit_is_clear(PINA, SW_HV))
+            toggle_count ++;
+        else
+            toggle_count = 0;
+        
+        if (toggle_count > 150) /* about 3 seconds */
+        {
+            toggle_count = 0;
+            mode = ! mode;
+            backup_mode();
+            display_mode();
+        }
+        
+		_delay_ms(20);
 	    wdt_reset();
 	}
 }
@@ -287,8 +364,6 @@ void run()
     unsigned short vbat;
     unsigned short thr;
 	byte bootcount = 0;
-
-	init();
 
 	read_adc(THROTTLE); /* dummy read */
 	read_adc(VBAT); /* dummy read */
@@ -339,19 +414,19 @@ void run()
 		}
 	    
 	    if (vbat >= BATT_LEVEL_4)
-	    led_on(L4);
+	        led_on(L4);
 	    else
-	    led_off(L4);
+	        led_off(L4);
 	    
 	    if (vbat >= BATT_LEVEL_3)
-	    led_on(L3);
+	        led_on(L3);
 	    else
-	    led_off(L3);
+	        led_off(L3);
 
 	    if (vbat >= BATT_LEVEL_2)
-	    led_on(L2);
+	        led_on(L2);
 	    else
-	    led_off(L2);
+	        led_off(L2);
 
 	    if (vbat >= BATT_LEVEL_1)
 	    {
@@ -364,23 +439,19 @@ void run()
 		    led_off(L1);
 		    low_batt();
 	    }
-		
-		if (triggered())
-			break;
+	
+        if (trigger() == ((mode) ? TRIGGER_FIRE : TRIGGER_OFF))
+            break;
+
 	    wdt_reset();
     }
 }
 
 int main(void)
 {
-    init();
-
-    #ifdef DIAGNOSE
-    diagnose();
-    #endif
-
 	while (1)
 	{
+        init();
 		idle();
 		run();
 	}
@@ -397,47 +468,18 @@ void low_batt()
 	output_pwm(0);
 	disable_hv();
     
-	for (i = 0; i < 10; i ++)
+	for (i = 0; i < 20; i ++)
     {
-        led_on(L1);
-		for (j = 0; j < 30; j ++)
+        ((i & 0x01) == 0) ? led_on(L1) : led_off(L1);
+		
+        for (j = 0; j < 30; j ++)
 		{
 			_delay_ms(10);
-			if (triggered())
-				return;
-		}
-        
-        led_off(L1);
-		for (j = 0; j < 30; j ++)
-		{
-			_delay_ms(10);
-			if (triggered())
-				return;
+            
+            if (trigger() == ((mode) ? TRIGGER_FIRE : TRIGGER_OFF))
+                return;
 		}
         
         wdt_reset();
     }        
 }
-
-#ifdef DIAGNOSE
-void diagnose()
-{
-    output_pwm(0);
-    while (1)
-    {
-        led_on(L1); led_off(L4); _delay_ms(80);
-        output_pwm(read_adc(THROTTLE) >> 8);
-        
-        led_on(L2); led_off(L1); _delay_ms(80);
-        output_pwm(read_adc(THROTTLE) >> 8);
-        
-        led_on(L3); led_off(L2); _delay_ms(80);
-        output_pwm(read_adc(THROTTLE) >> 8);
-        
-        led_on(L4); led_off(L3); _delay_ms(80);
-        output_pwm(read_adc(THROTTLE) >> 8);
-        
-        wdt_reset();
-    }
-}
-#endif
