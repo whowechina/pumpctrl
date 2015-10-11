@@ -127,7 +127,7 @@ void init_pwm()
 {
     /* Fast PWM */
     TCCR0A = 0 << COM0A0 | 3 << WGM00; /* Not to turn on right now */
-    /* Fast PWM, Prescaler div1 */
+    /* Fast PWM, Prescaler div 1 */
     TCCR0B = 0 << WGM02 | 1 << CS00;
 }
 
