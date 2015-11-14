@@ -12,7 +12,7 @@
 #include <avr/eeprom.h>
 
 const char fusedata[] __attribute__ ((section (".fuse"))) =
-{0xE2, 0xDF, 0xFF};
+{0xD2, 0xDF, 0xFF};
 const char lockbits[] __attribute__ ((section (".lockbits"))) =
 {0xFC};
 unsigned char eeprom[] __attribute__ ((section (".eeprom"))) =
