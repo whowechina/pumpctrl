@@ -51,11 +51,11 @@ const LED L4 = { LED_OUT_PA, PORTA7};
 unsigned char hvout;
 unsigned char mode;
 
-#define BATT_LEVEL_BOOT 630
-#define BATT_LEVEL_1 600
-#define BATT_LEVEL_2 700
-#define BATT_LEVEL_3 790
-#define BATT_LEVEL_4 870
+#define BATT_LEVEL_BOOT 740
+#define BATT_LEVEL_1 720
+#define BATT_LEVEL_2 840
+#define BATT_LEVEL_3 879
+#define BATT_LEVEL_4 922
 
 
 void init();
@@ -438,6 +438,7 @@ void run()
 	    {
 		    led_off(L1);
 		    low_batt();
+			return;
 	    }
 	
         if (trigger() == ((mode) ? TRIGGER_FIRE : TRIGGER_OFF))
